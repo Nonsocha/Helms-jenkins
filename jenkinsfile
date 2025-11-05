@@ -1,0 +1,55 @@
+pipeline {
+    agent any
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Verify Environment') {
+            steps {
+                script {
+                    echo "Checking tools..."
+                    sh 'which helm'
+                    sh 'helm version'
+                    sh 'kubectl version --client'
+                    sh 'pwd'
+                    sh 'ls -la'
+                }
+            }
+        }
+        
+        stage('Deploy with Helm') {
+            steps {
+                script {
+                    // Replace this path with your actual helm path from 'which helm'
+                    sh '/usr/local/bin/helm upgrade --install my-webapp ./webapp --namespace default --atomic --timeout 5m'
+                }
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    sh 'kubectl get deployments'
+                    sh 'kubectl get pods -l app=my-webapp'
+                    sh 'helm list'
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Pipeline completed - check logs above for details'
+        }
+        success {
+            echo 'Deployment successful! '
+        }
+        failure {
+            echo 'Deployment failed! Check the logs above. '
+        }
+    }
+}
