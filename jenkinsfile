@@ -1,55 +1,70 @@
 pipeline {
     agent any
-    
+
+    environment {
+        HELM_HOME = '/usr/local/bin/helm'
+        APP_NAME = 'myapp'
+        IMAGE_TAG = 'latest'
+    }
+
+    triggers {
+        // Automatically build when a GitHub webhook is triggered
+        githubPush()
+    }
+
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                checkout scm
+                echo 'Pulling latest code from GitHub...'
+                git branch: 'main', url: 'https://github.com/Nonsocha/Helms-jenkins.git'
             }
         }
-        
-        stage('Verify Environment') {
+
+        stage('Build Docker Image') {
             steps {
-                script {
-                    echo "Checking tools..."
-                    sh 'which helm'
-                    sh 'helm version'
-                    sh 'kubectl version --client'
-                    sh 'pwd'
-                    sh 'ls -la'
-                }
+                echo 'Building Docker image...'
+                sh 'docker build -t ${APP_NAME}:${IMAGE_TAG} .'
             }
         }
-        
-        stage('Deploy with Helm') {
+
+        stage('Run Container (Test Locally)') {
             steps {
-                script {
-                    // Replace this path with your actual helm path from 'which helm'
-                    sh '/usr/local/bin/helm upgrade --install my-webapp ./webapp --namespace default --atomic --timeout 5m'
-                }
+                echo 'Running container locally for validation...'
+                // Stop any existing container with same name
+                sh 'docker rm -f ${APP_NAME} || true'
+                sh 'docker run -d --name ${APP_NAME} -p 8081:80 ${APP_NAME}:${IMAGE_TAG}'
             }
         }
-        
-        stage('Verify Deployment') {
+
+        stage('Validation Tests') {
             steps {
-                script {
-                    sh 'kubectl get deployments'
-                    sh 'kubectl get pods -l app=my-webapp'
-                    sh 'helm list'
-                }
+                echo 'Performing container validation tests...'
+                // Simple health check to verify app is running
+                sh '''
+                sleep 5
+                if curl -s http://localhost:8081 | grep -q "Welcome"; then
+                    echo "App is running correctly!"
+                else
+                    echo "App failed validation!" && exit 1
+                fi
+                '''
+            }
+        }
+
+        stage('Deploy with Helm (Local Minikube)') {
+            steps {
+                echo 'Deploying app to local Minikube using Helm...'
+                sh "${HELM_HOME} upgrade --install ${APP_NAME} ./chart --values ./chart/values.yaml"
             }
         }
     }
-    
+
     post {
-        always {
-            echo 'Pipeline completed - check logs above for details'
-        }
         success {
-            echo 'Deployment successful! '
+            echo ' Build and deployment completed successfully!'
         }
         failure {
-            echo 'Deployment failed! Check the logs above. '
+            echo ' Build failed. Check logs for details.'
         }
     }
 }
